@@ -10,22 +10,18 @@ import yaml
 import os
 import joblib
 from torch.utils.tensorboard import SummaryWriter
-from torch.cuda.amp import autocast
-import torch.autograd.profiler as profiler
-
 import warnings
 warnings.filterwarnings("ignore")
 
-ROOT = str(pathlib.Path(__file__).resolve().parents[2])
-print(ROOT)
-# sys.path.append(ROOT)
-# sys.path.insert(0, ".")
+ROOT = str(pathlib.Path(__file__).resolve().parents[3])
+sys.path.append(ROOT)
+sys.path.insert(0, ".")
 
-from model.net import *
-from env.high_level_env import Testing_Env, Training_Env
-from RL.util.utili import get_ada, get_epsilon, LinearDecaySchedule
-from RL.util.replay_buffer import ReplayBuffer_High
-from RL.util.memory import episodicmemory
+from minute.model.net import *
+from minute.env.high_level_env import Testing_Env, Training_Env
+from minute.RL.util.utili import get_ada, get_epsilon, LinearDecaySchedule
+from minute.RL.util.replay_buffer import ReplayBuffer_High
+from minute.RL.util.memory import episodicmemory
 
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
@@ -36,7 +32,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--buffer_size",type=int,default=1000000,)
 parser.add_argument("--dataset",type=str,default="ETHUSDT")
 parser.add_argument("--q_value_memorize_freq",type=int, default=10,)
-parser.add_argument("--batch_size",type=int,default=2048) # update，原有512，改成1024或者2048
+parser.add_argument("--batch_size",type=int,default=512)
 parser.add_argument("--eval_update_freq",type=int,default=512)
 parser.add_argument("--lr", type=float, default=1e-4)
 parser.add_argument("--epsilon_start",type=float,default=0.7)
@@ -73,7 +69,7 @@ class DQN(object):
         self.seed = args.seed
         seed_torch(self.seed)
         if torch.cuda.is_available():
-            self.device = torch.device(args.device)  # 修改为 "cuda" 以便使用所有可用的 GPU
+            self.device = torch.device(args.device)
         else:
             self.device = torch.device("cpu")
         self.result_path = os.path.join("./result/high_level", '{}'.format(args.dataset), args.exp)
@@ -118,29 +114,18 @@ class DQN(object):
         self.n_action = 2
         self.n_state_1 = len(self.tech_indicator_list)
         self.n_state_2 = len(self.tech_indicator_list_trend)
-
-
-        # self.slope_1 = subagent(
-        #     self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)
-        # self.slope_2 = subagent(
-        #     self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)
-        # self.slope_3 = subagent(
-        #     self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)
-        # self.vol_1 = subagent(
-        #     self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)
-        # self.vol_2 = subagent(
-        #     self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)
-        # self.vol_3 = subagent(
-        #     self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)
-
-        # 使用 DataParallel 包装模型
-        self.slope_1 = nn.DataParallel(subagent(self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device))
-        self.slope_2 = nn.DataParallel(subagent(self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device))
-        self.slope_3 = nn.DataParallel(subagent(self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device))
-        self.vol_1 = nn.DataParallel(subagent(self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device))
-        self.vol_2 = nn.DataParallel(subagent(self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device))
-        self.vol_3 = nn.DataParallel(subagent(self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device))
-
+        self.slope_1 = subagent(
+            self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)
+        self.slope_2 = subagent(
+            self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)
+        self.slope_3 = subagent(
+            self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)
+        self.vol_1 = subagent(
+            self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)
+        self.vol_2 = subagent(
+            self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)
+        self.vol_3 = subagent(
+            self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device)        
         model_list_slope = [
             "./result/low_level/ETHUSDT/slope/1/best_model.pkl", 
             "./result/low_level/ETHUSDT/slope/2/best_model.pkl",
@@ -179,15 +164,9 @@ class DQN(object):
             1: self.vol_2,
             2: self.vol_3
         }
-        # self.hyperagent = hyperagent(self.n_state_1, self.n_state_2, self.n_action, 32).to(self.device)
-        # self.hyperagent_target = hyperagent(self.n_state_1, self.n_state_2, self.n_action, 32).to(self.device)
-        # self.hyperagent_target.load_state_dict(self.hyperagent.state_dict())
-
-        # 使用 DataParallel 包装 hyperagent 模型
-        self.hyperagent = nn.DataParallel(hyperagent(self.n_state_1, self.n_state_2, self.n_action, 32).to(self.device))
-        self.hyperagent_target = nn.DataParallel(hyperagent(self.n_state_1, self.n_state_2, self.n_action, 32).to(self.device))
+        self.hyperagent = hyperagent(self.n_state_1, self.n_state_2, self.n_action, 32).to(self.device)
+        self.hyperagent_target = hyperagent(self.n_state_1, self.n_state_2, self.n_action, 32).to(self.device)
         self.hyperagent_target.load_state_dict(self.hyperagent.state_dict())
-
         self.update_times = args.update_times
         self.optimizer = torch.optim.Adam(self.hyperagent.parameters(),
                                           lr=args.lr)
@@ -205,190 +184,90 @@ class DQN(object):
         self.epsilon = args.epsilon_start
         self.memory = episodicmemory(4320, 5, self.n_state_1, self.n_state_2, 64, self.device)
 
-    # def calculate_q(self, w, qs):
-    #     q_tensor = torch.stack(qs)
-    #     q_tensor = q_tensor.permute(1, 0, 2)
-    #     weights_reshaped = w.view(-1, 1, 6)
-    #     combined_q = torch.bmm(weights_reshaped, q_tensor).squeeze(1)
-    #
-    #     return combined_q
-
-    # update
     def calculate_q(self, w, qs):
-        # 确保在gpu
-        w = w.to(self.device)
-        qs = [q.to(self.device) for q in qs]
-
-        # 确保尺寸
-        batch_size = w.size(0)
-        assert all(q.size(0) == batch_size for q in qs), "Inconsistent batch sizes in qs"
-
-        q_tensor = torch.stack(qs)  # Shape: (6, batch_size, num_actions)
-        q_tensor = q_tensor.permute(1, 0, 2)  # Shape: (batch_size, 6, num_actions)
-        weights_reshaped = w.view(-1, 1, 6)  # Shape: (batch_size, 1, 6)
-        combined_q = torch.bmm(weights_reshaped, q_tensor).squeeze(1)  # Shape: (batch_size, num_actions)
+        q_tensor = torch.stack(qs)
+        q_tensor = q_tensor.permute(1, 0, 2)
+        weights_reshaped = w.view(-1, 1, 6)
+        combined_q = torch.bmm(weights_reshaped, q_tensor).squeeze(1)
+        
         return combined_q
 
-    # def update(self, replay_buffer):
-    #     batch, _, _ = replay_buffer.sample()
-    #     batch = {k: v.to(self.device) for k, v in batch.items()}
-    #
-    #     w_current = self.hyperagent(batch['state'], batch['state_trend'], batch['state_clf'], batch['previous_action'])
-    #     w_next = self.hyperagent_target(batch['next_state'], batch['next_state_trend'], batch['next_state_clf'], batch['next_previous_action'])
-    #     w_next_ = self.hyperagent(batch['next_state'], batch['next_state_trend'], batch['next_state_clf'], batch['next_previous_action'])
-    #
-    #
-    #     qs_current = [
-    #                 self.slope_agents[0](batch['state'], batch['state_trend'], batch['previous_action']),
-    #                 self.slope_agents[1](batch['state'], batch['state_trend'], batch['previous_action']),
-    #                 self.slope_agents[2](batch['state'], batch['state_trend'], batch['previous_action']),
-    #                 self.vol_agents[0](batch['state'], batch['state_trend'], batch['previous_action']),
-    #                 self.vol_agents[1](batch['state'], batch['state_trend'], batch['previous_action']),
-    #                 self.vol_agents[2](batch['state'], batch['state_trend'], batch['previous_action'])
-    #     ]
-    #     qs_next = [
-    #                 self.slope_agents[0](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
-    #                 self.slope_agents[1](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
-    #                 self.slope_agents[2](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
-    #                 self.vol_agents[0](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
-    #                 self.vol_agents[1](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
-    #                 self.vol_agents[2](batch['next_state'], batch['next_state_trend'], batch['next_previous_action'])
-    #     ]
-    #     q_distribution = self.calculate_q(w_current, qs_current)
-    #     q_current = q_distribution.gather(-1, batch['action']).squeeze(-1)
-    #     a_argmax = self.calculate_q(w_next_, qs_next).argmax(dim=-1, keepdim=True)
-    #     q_nexts = self.calculate_q(w_next, qs_next)
-    #     q_target = batch['reward'] + self.gamma * (1 - batch['terminal']) * q_nexts.gather(-1, a_argmax).squeeze(-1)
-    #
-    #     td_error = self.loss_func(q_current, q_target)
-    #     memory_error = self.loss_func(q_current, batch['q_memory'])
-    #
-    #     demonstration = batch['demo_action']
-    #     KL_loss = F.kl_div(
-    #         (q_distribution.softmax(dim=-1) + 1e-8).log(),
-    #         (demonstration.softmax(dim=-1) + 1e-8),
-    #         reduction="batchmean",
-    #     )
-    #
-    #     loss = td_error + args.alpha * memory_error + args.beta * KL_loss
-    #     self.optimizer.zero_grad()
-    #     loss.backward()
-    #
-    #     torch.nn.utils.clip_grad_norm_(self.hyperagent.parameters(), 1)
-    #     self.optimizer.step()
-    #     for param, target_param in zip(self.hyperagent.parameters(), self.hyperagent_target.parameters()):
-    #         target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-    #     self.update_counter += 1
-    #     return td_error.cpu(), memory_error.cpu(), KL_loss.cpu(), torch.mean(q_current.cpu()), torch.mean(q_target.cpu())
 
-    # update
     def update(self, replay_buffer):
-        with profiler.profile(use_cuda=True) as prof:
-            batch, _, _ = replay_buffer.sample()
-            batch = {k: v.to(self.device) for k, v in batch.items()}
+        batch, _, _ = replay_buffer.sample()
+        batch = {k: v.to(self.device) for k, v in batch.items()}
+        
+        w_current = self.hyperagent(batch['state'], batch['state_trend'], batch['state_clf'], batch['previous_action'])
+        w_next = self.hyperagent_target(batch['next_state'], batch['next_state_trend'], batch['next_state_clf'], batch['next_previous_action'])
+        w_next_ = self.hyperagent(batch['next_state'], batch['next_state_trend'], batch['next_state_clf'], batch['next_previous_action'])
 
-            w_current = self.hyperagent(batch['state'], batch['state_trend'], batch['state_clf'],
-                                        batch['previous_action'])
-            w_next = self.hyperagent_target(batch['next_state'], batch['next_state_trend'], batch['next_state_clf'],
-                                            batch['next_previous_action'])
-            w_next_ = self.hyperagent(batch['next_state'], batch['next_state_trend'], batch['next_state_clf'],
-                                      batch['next_previous_action'])
 
-            qs_current = [
-                self.slope_agents[0](batch['state'], batch['state_trend'], batch['previous_action']),
-                self.slope_agents[1](batch['state'], batch['state_trend'], batch['previous_action']),
-                self.slope_agents[2](batch['state'], batch['state_trend'], batch['previous_action']),
-                self.vol_agents[0](batch['state'], batch['state_trend'], batch['previous_action']),
-                self.vol_agents[1](batch['state'], batch['state_trend'], batch['previous_action']),
-                self.vol_agents[2](batch['state'], batch['state_trend'], batch['previous_action'])
-            ]
-            qs_next = [
-                self.slope_agents[0](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
-                self.slope_agents[1](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
-                self.slope_agents[2](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
-                self.vol_agents[0](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
-                self.vol_agents[1](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
-                self.vol_agents[2](batch['next_state'], batch['next_state_trend'], batch['next_previous_action'])
-            ]
-            q_distribution = self.calculate_q(w_current, qs_current)
-            q_current = q_distribution.gather(-1, batch['action']).squeeze(-1)
-            a_argmax = self.calculate_q(w_next_, qs_next).argmax(dim=-1, keepdim=True)
-            q_nexts = self.calculate_q(w_next, qs_next)
-            q_target = batch['reward'] + self.gamma * (1 - batch['terminal']) * q_nexts.gather(-1, a_argmax).squeeze(-1)
+        qs_current = [
+                    self.slope_agents[0](batch['state'], batch['state_trend'], batch['previous_action']),
+                    self.slope_agents[1](batch['state'], batch['state_trend'], batch['previous_action']),
+                    self.slope_agents[2](batch['state'], batch['state_trend'], batch['previous_action']),
+                    self.vol_agents[0](batch['state'], batch['state_trend'], batch['previous_action']),
+                    self.vol_agents[1](batch['state'], batch['state_trend'], batch['previous_action']),
+                    self.vol_agents[2](batch['state'], batch['state_trend'], batch['previous_action'])
+        ]
+        qs_next = [
+                    self.slope_agents[0](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
+                    self.slope_agents[1](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
+                    self.slope_agents[2](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
+                    self.vol_agents[0](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
+                    self.vol_agents[1](batch['next_state'], batch['next_state_trend'], batch['next_previous_action']),
+                    self.vol_agents[2](batch['next_state'], batch['next_state_trend'], batch['next_previous_action'])
+        ]
+        q_distribution = self.calculate_q(w_current, qs_current)
+        q_current = q_distribution.gather(-1, batch['action']).squeeze(-1)
+        a_argmax = self.calculate_q(w_next_, qs_next).argmax(dim=-1, keepdim=True)
+        q_nexts = self.calculate_q(w_next, qs_next)
+        q_target = batch['reward'] + self.gamma * (1 - batch['terminal']) * q_nexts.gather(-1, a_argmax).squeeze(-1)
 
-            td_error = self.loss_func(q_current, q_target)
-            memory_error = self.loss_func(q_current, batch['q_memory'])
+        td_error = self.loss_func(q_current, q_target)
+        memory_error = self.loss_func(q_current, batch['q_memory'])
 
-            demonstration = batch['demo_action']
-            KL_loss = F.kl_div(
-                (q_distribution.softmax(dim=-1) + 1e-8).log(),
-                (demonstration.softmax(dim=-1) + 1e-8),
-                reduction="batchmean",
-            )
+        demonstration = batch['demo_action']
+        KL_loss = F.kl_div(
+            (q_distribution.softmax(dim=-1) + 1e-8).log(),
+            (demonstration.softmax(dim=-1) + 1e-8),
+            reduction="batchmean",
+        )
 
-            loss = td_error + args.alpha * memory_error + args.beta * KL_loss
-            self.optimizer.zero_grad()
-            loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.hyperagent.parameters(), 1)
-            self.optimizer.step()
+        loss = td_error + args.alpha * memory_error + args.beta * KL_loss
+        self.optimizer.zero_grad()
+        loss.backward()
 
-            for param, target_param in zip(self.hyperagent.parameters(), self.hyperagent_target.parameters()):
-                target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
-
-            self.update_counter += 1
-
-        print(prof.key_averages().table(sort_by="cuda_time_total"))
-
+        torch.nn.utils.clip_grad_norm_(self.hyperagent.parameters(), 1)
+        self.optimizer.step()
+        for param, target_param in zip(self.hyperagent.parameters(), self.hyperagent_target.parameters()):
+            target_param.data.copy_(self.tau * param.data + (1 - self.tau) * target_param.data)
+        self.update_counter += 1
         return td_error.cpu(), memory_error.cpu(), KL_loss.cpu(), torch.mean(q_current.cpu()), torch.mean(q_target.cpu())
 
-    # def act(self, state, state_trend, state_clf, info):
-    #     x1 = torch.FloatTensor(state).to(self.device)
-    #     x2 = torch.FloatTensor(state_trend).to(self.device)
-    #     x3 = torch.FloatTensor(state_clf).unsqueeze(0).to(self.device)
-    #     previous_action = torch.unsqueeze(
-    #         torch.tensor(info["previous_action"]).long().to(self.device),
-    #         0).to(self.device)
-    #     if np.random.uniform() < (1-self.epsilon):
-    #         qs = [
-    #                 self.slope_agents[0](x1, x2, previous_action),
-    #                 self.slope_agents[1](x1, x2, previous_action),
-    #                 self.slope_agents[2](x1, x2, previous_action),
-    #                 self.vol_agents[0](x1, x2, previous_action),
-    #                 self.vol_agents[1](x1, x2, previous_action),
-    #                 self.vol_agents[2](x1, x2, previous_action)
-    #         ]
-    #         w = self.hyperagent(x1, x2, x3, previous_action)
-    #         actions_value = self.calculate_q(w, qs)
-    #         action = torch.max(actions_value, 1)[1].data.cpu().numpy()
-    #         action = action[0]
-    #     else:
-    #         action_choice = [0,1]
-    #         action = random.choice(action_choice)
-    #     return action
-
-    # update
     def act(self, state, state_trend, state_clf, info):
-        state_tensor = torch.FloatTensor(state).to(self.device)
-        state_trend_tensor = torch.FloatTensor(state_trend).to(self.device)
-        state_clf_tensor = torch.FloatTensor(state_clf).unsqueeze(0).to(self.device)
-        previous_action_tensor = torch.tensor(info["previous_action"]).long().unsqueeze(0).to(self.device)
-
-        with autocast():
-            if np.random.uniform() < (1 - self.epsilon):
-                qs = [
-                    self.slope_agents[0](state_tensor, state_trend_tensor, previous_action_tensor),
-                    self.slope_agents[1](state_tensor, state_trend_tensor, previous_action_tensor),
-                    self.slope_agents[2](state_tensor, state_trend_tensor, previous_action_tensor),
-                    self.vol_agents[0](state_tensor, state_trend_tensor, previous_action_tensor),
-                    self.vol_agents[1](state_tensor, state_trend_tensor, previous_action_tensor),
-                    self.vol_agents[2](state_tensor, state_trend_tensor, previous_action_tensor)
-                ]
-                w = self.hyperagent(state_tensor, state_trend_tensor, state_clf_tensor, previous_action_tensor)
-                actions_value = self.calculate_q(w, qs)
-                action = torch.max(actions_value, 1)[1].item()  # Get the action index
-            else:
-                action = random.choice([0, 1])
-
+        x1 = torch.FloatTensor(state).to(self.device)
+        x2 = torch.FloatTensor(state_trend).to(self.device)
+        x3 = torch.FloatTensor(state_clf).unsqueeze(0).to(self.device)
+        previous_action = torch.unsqueeze(
+            torch.tensor(info["previous_action"]).long().to(self.device),
+            0).to(self.device)
+        if np.random.uniform() < (1-self.epsilon):
+            qs = [
+                    self.slope_agents[0](x1, x2, previous_action),
+                    self.slope_agents[1](x1, x2, previous_action),
+                    self.slope_agents[2](x1, x2, previous_action),
+                    self.vol_agents[0](x1, x2, previous_action),
+                    self.vol_agents[1](x1, x2, previous_action),
+                    self.vol_agents[2](x1, x2, previous_action)
+            ]
+            w = self.hyperagent(x1, x2, x3, previous_action)
+            actions_value = self.calculate_q(w, qs)
+            action = torch.max(actions_value, 1)[1].data.cpu().numpy()
+            action = action[0]
+        else:
+            action_choice = [0,1]
+            action = random.choice(action_choice)
         return action
 
     def act_test(self, state, state_trend, state_clf, info):

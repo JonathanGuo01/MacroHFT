@@ -5,6 +5,12 @@ import pickle
 from scipy.signal import butter, filtfilt
 from sklearn.linear_model import LinearRegression
 
+import warnings
+
+
+warnings.filterwarnings("ignore")
+
+
 def smooth_data(data):
     N, Wn = 1, 0.05
     b, a = butter(N, Wn, btype='low')

@@ -13,15 +13,14 @@ from torch.utils.tensorboard import SummaryWriter
 import warnings
 warnings.filterwarnings("ignore")
 
-ROOT = str(pathlib.Path(__file__).resolve().parents[2])
-print(ROOT)
-# sys.path.append(ROOT)
-# sys.path.insert(0, ".")
+ROOT = str(pathlib.Path(__file__).resolve().parents[3])
+sys.path.append(ROOT)
+sys.path.insert(0, ".")
 
-from model.net import *
-from env.low_level_env import Testing_Env, Training_Env
-from RL.util.utili import get_ada, get_epsilon, LinearDecaySchedule
-from RL.util.replay_buffer import ReplayBuffer
+from MacroHFT.model.net import *
+from MacroHFT.env.low_level_env import Testing_Env, Training_Env
+from MacroHFT.RL.util.utili import get_ada, get_epsilon, LinearDecaySchedule
+from MacroHFT.RL.util.replay_buffer import ReplayBuffer
 
 os.environ["MKL_NUM_THREADS"] = "1"
 os.environ["NUMEXPR_NUM_THREADS"] = "1"
@@ -138,13 +137,6 @@ class DQN(object):
             self.n_state_1, self.n_state_2, self.n_action, 64).to(self.device), subagent(
                 self.n_state_1, self.n_state_2, self.n_action,
                 64).to(self.device)
-
-        # 使用 DataParallel 包装模型以支持多 GPU
-        if torch.cuda.device_count() > 1:
-            self.eval_net = nn.DataParallel(self.eval_net)
-            self.target_net = nn.DataParallel(self.target_net)
-
-
         self.hardupdate()
         self.update_times = args.update_times
         self.optimizer = torch.optim.Adam(self.eval_net.parameters(),
@@ -373,13 +365,8 @@ class DQN(object):
             epoch_final_balance_train_list = []
             epoch_required_money_train_list = []
             epoch_reward_sum_train_list = []
-
-            best_model_path_epoch = os.path.join(ROOT, 'result', 'low_level',
-                                           str(self.dataset), str(self.clf), str(self.label), f"best_model_{sample}.pkl")
-            torch.save(best_model.state_dict(), best_model_path_epoch)
-
-        best_model_path = os.path.join(ROOT, 'result', 'low_level',
-                                       str(self.dataset), str(self.clf), str(self.label), 'best_model.pkl')
+        best_model_path = os.path.join("./result/low_level", 
+                                        '{}'.format(self.dataset), '{}'.format(self.clf), self.label, 'best_model.pkl')
         torch.save(best_model.state_dict(), best_model_path)
 
 
